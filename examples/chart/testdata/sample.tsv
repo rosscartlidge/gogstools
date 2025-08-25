@@ -1,0 +1,6 @@
+time	cpu_usage	memory_usage	disk_io	network_rx
+1	25	40	100	50
+2	35	45	120	75
+3	45	50	140	100
+4	30	48	110	60
+5	40	55	160	90
