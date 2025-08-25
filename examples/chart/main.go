@@ -6,7 +6,7 @@ import (
 	"log"
 	"os"
 
-	"github.com/rossc/gogstools/gs"
+	"github.com/rosscartlidge/gogstools/gs"
 )
 
 // ChartConfig defines the configuration for the chart command
