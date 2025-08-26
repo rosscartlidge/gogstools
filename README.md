@@ -270,9 +270,9 @@ Test that completion is working:
 # Check completion is registered
 complete -p chart
 
-# Test completion manually
-chart -complete 1 -type    # Should show: bar line area
-chart -complete 1 -y ""    # Should show TSV field names
+# Test completion manually  
+chart -complete 1 -type                           # Should show: bar line area
+chart -complete 1 -y testdata/sample.tsv         # Should show TSV field names
 ```
 
 ### Troubleshooting
