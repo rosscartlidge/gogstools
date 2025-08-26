@@ -3,6 +3,7 @@ package gs
 import (
 	"context"
 	"fmt"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -271,6 +272,94 @@ func TestEnumParsing(t *testing.T) {
 					test.tag, i, expected, meta.Enum[i])
 			}
 		}
+	}
+}
+
+func TestMultiArgumentSwitchCompletion(t *testing.T) {
+	// Test field completion directly since it's used by multi-argument switches
+	config := &TestCompletionConfig{}
+	cmd, err := NewCommand(config)
+	if err != nil {
+		t.Fatalf("Failed to create command: %v", err)
+	}
+
+	// Test field completion which is used by multi-argument switches
+	completions, err := cmd.completeField("../examples/chart/testdata/sample.tsv", "")
+	if err != nil {
+		t.Fatalf("Field completion failed: %v", err)
+	}
+
+	expected := []string{"time", "cpu_usage", "memory_usage", "disk_io", "network_rx"}
+	if !reflect.DeepEqual(completions, expected) {
+		t.Errorf("Expected field completions %v, got %v", expected, completions)
+	}
+
+	// Test content completion
+	contentCompletions, err := cmd.completeContent("../examples/chart/testdata/sample.tsv", "cpu_usage", "")
+	if err != nil {
+		t.Fatalf("Content completion failed: %v", err)
+	}
+
+	expectedContent := []string{"25", "30", "35", "40", "45"} // sorted order
+	if !reflect.DeepEqual(contentCompletions, expectedContent) {
+		t.Errorf("Expected content completions %v, got %v", expectedContent, contentCompletions)
+	}
+}
+
+func TestFileCompletionWithSuffixFiltering(t *testing.T) {
+	// Test file completion with suffix filtering directly
+	config := &TestCompletionConfig{}
+	cmd, err := NewCommand(config)
+	if err != nil {
+		t.Fatalf("Failed to create command: %v", err)
+	}
+
+	// Get field meta for File (which has .tsv suffix)
+	var fileMeta *FieldMeta
+	for _, meta := range cmd.fields {
+		if meta.Name == "File" {
+			fileMeta = &meta
+			break
+		}
+	}
+	if fileMeta == nil {
+		t.Fatal("Could not find File field metadata")
+	}
+
+	// Test TSV file completion with suffix filtering
+	completions, err := cmd.completeFilesWithSuffix("../examples/chart/testdata/", fileMeta)
+	if err != nil {
+		t.Fatalf("File completion failed: %v", err)
+	}
+
+	// Should find .tsv files
+	found := false
+	for _, completion := range completions {
+		if strings.Contains(completion, "sample.tsv") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("Expected to find 'sample.tsv' in completions %v", completions)
+	}
+
+	// Test basic file completion (no suffix filter)
+	basicCompletions, err := cmd.completeFiles("../")
+	if err != nil {
+		t.Fatalf("Basic file completion failed: %v", err)
+	}
+
+	// Should include directories like "examples/"
+	foundDir := false
+	for _, completion := range basicCompletions {
+		if strings.Contains(completion, "examples/") {
+			foundDir = true
+			break
+		}
+	}
+	if !foundDir {
+		t.Errorf("Expected to find 'examples/' in completions %v", basicCompletions)
 	}
 }
 
