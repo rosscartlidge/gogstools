@@ -266,19 +266,20 @@ chart -usage
 ## Package Structure
 
 ```
-github.com/yourname/gogstools/
+github.com/rosscartlidge/gogstools/
 ├── gs/                 # Core command processing
 │   ├── types.go       # Type definitions and interfaces  
 │   ├── parser.go      # Struct tag parsing
-│   ├── command.go     # Main command execution
-└── completion/        # Completion system
-    └── tsv.go        # TSV field completion
+│   ├── command.go     # Main command execution with integrated completion
+│   └── command_test.go # Comprehensive test suite
+└── examples/           # Example implementations
+    └── chart/         # Working chart command demonstrator
 ```
 
 ## Installation
 
 ```bash
-go get github.com/rossc/gogstools
+go get github.com/rosscartlidge/gogstools
 ```
 
 ## Examples

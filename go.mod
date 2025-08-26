@@ -1,3 +1,3 @@
-module github.com/rossc/gogstools
+module github.com/rosscartlidge/gogstools
 
 go 1.24.4
