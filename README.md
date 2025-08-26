@@ -231,6 +231,72 @@ chart -argv /tmp/<TAB>      # Shows files in /tmp matching suffix + subdirectori
 chart -argv data/<TAB>      # Shows files in data/ directory
 ```
 
+## Bash Completion Setup
+
+GoGSTools provides sophisticated bash completion that must be installed to work properly.
+
+### Quick Installation
+
+```bash
+# 1. Build your command
+cd examples/chart
+go build
+
+# 2. Install completion (user-specific)
+mkdir -p ~/.local/share/bash-completion/completions
+./chart -bash-completion > ~/.local/share/bash-completion/completions/chart
+
+# 3. Restart shell or source completion
+exec bash
+```
+
+### Alternative Installation Methods
+
+**System-wide installation (requires sudo):**
+```bash
+sudo ./chart -bash-completion > /etc/bash_completion.d/chart
+exec bash
+```
+
+**Session-only installation:**
+```bash
+eval "$(./chart -bash-completion)"
+```
+
+### Verification
+
+Test that completion is working:
+```bash
+# Check completion is registered
+complete -p chart
+
+# Test completion manually
+chart -complete 1 -type    # Should show: bar line area
+chart -complete 1 -y ""    # Should show TSV field names
+```
+
+### Troubleshooting
+
+1. **Ensure bash-completion is installed:**
+   ```bash
+   # Ubuntu/Debian
+   sudo apt install bash-completion
+   
+   # macOS
+   brew install bash-completion
+   ```
+
+2. **Verify chart binary path:**
+   ```bash
+   which chart    # Should show the binary location
+   ```
+
+3. **Re-source completion:**
+   ```bash
+   source ~/.bashrc
+   # OR restart terminal
+   ```
+
 ## Auto-Documentation
 
 Every command automatically supports help and documentation:
