@@ -63,14 +63,8 @@ func (cfg *ChartConfig) Execute(ctx context.Context, clauses []gs.ClauseSet) err
 
 // Validate implements the Commander interface
 func (cfg *ChartConfig) Validate() error {
-	validTypes := map[string]bool{
-		"bar": true, "line": true, "area": true,
-	}
-	
-	if !validTypes[cfg.Type] {
-		return fmt.Errorf("invalid chart type: %s", cfg.Type)
-	}
-	
+	// Enum validation now handled during parsing
+	// Add any other validation logic here if needed
 	return nil
 }
 

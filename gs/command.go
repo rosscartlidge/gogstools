@@ -113,6 +113,16 @@ func (cmd *GSCommand) Parse(args []string) ([]ClauseSet, error) {
 			// Positional argument (likely filename)
 			current.Fields["_args"] = append(
 				getStringSlice(current.Fields["_args"]), arg)
+			
+			// If this looks like a TSV file and no -argv has been set, treat as file input
+			if strings.HasSuffix(strings.ToLower(arg), ".tsv") || strings.HasSuffix(strings.ToLower(arg), ".csv") {
+				if _, hasArgv := current.Fields["Argv"]; !hasArgv {
+					// Also check global fields to avoid overriding explicit -argv
+					if _, hasGlobalArgv := global["Argv"]; !hasGlobalArgv {
+						current.Fields["Argv"] = arg
+					}
+				}
+			}
 			i++
 		}
 	}
@@ -245,7 +255,7 @@ func (cmd *GSCommand) parseFlagWithNegation(args []string, clause *ClauseSet, gl
 		}
 		
 		value := args[1]
-		parsedValue, err := cmd.parseValue(value, fieldMeta.Type)
+		parsedValue, err := cmd.parseValueWithValidation(value, fieldMeta)
 		if err != nil {
 			return 0, fmt.Errorf("parsing value for %s: %w", flagName, err)
 		}
@@ -291,6 +301,33 @@ func (cmd *GSCommand) parseValue(value string, fieldType FieldType) (interface{}
 	default:
 		return value, nil
 	}
+}
+
+// parseValueWithValidation converts a string value to the appropriate type and validates enum constraints
+func (cmd *GSCommand) parseValueWithValidation(value string, fieldMeta *FieldMeta) (interface{}, error) {
+	// First parse the value according to its type
+	parsedValue, err := cmd.parseValue(value, fieldMeta.Type)
+	if err != nil {
+		return nil, err
+	}
+	
+	// For string fields, check enum constraints
+	if fieldMeta.Type == FieldTypeString && len(fieldMeta.Enum) > 0 {
+		// Check if the value is in the allowed enum values
+		found := false
+		for _, enumValue := range fieldMeta.Enum {
+			if value == enumValue {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return nil, fmt.Errorf("invalid value '%s', must be one of: %s", 
+				value, strings.Join(fieldMeta.Enum, ", "))
+		}
+	}
+	
+	return parsedValue, nil
 }
 
 // parseValueByArgumentType converts a string value based on ArgumentType
@@ -557,19 +594,19 @@ func (cmd *GSCommand) isFieldFlag(flagName string) bool {
 // findTSVFile searches for TSV files in command arguments
 func (cmd *GSCommand) findTSVFile(args []string) string {
 	for i, arg := range args {
-		// Case 1: Direct TSV file argument (not following a flag)
-		if strings.HasSuffix(arg, ".tsv") && !strings.HasPrefix(arg, "-") {
-			// Make sure it's not immediately after a flag that takes a value
-			if i > 0 && (args[i-1] == "-argv" || strings.HasSuffix(args[i-1], "-file")) {
-				return arg // This is a file after a file flag
-			} else if i == 0 || !strings.HasPrefix(args[i-1], "-") {
-				return arg // This is a positional argument
+		// Case 1: TSV/CSV file after flags like -argv
+		if i > 0 && (args[i-1] == "-argv" || strings.HasSuffix(args[i-1], "-file")) {
+			if strings.HasSuffix(arg, ".tsv") || strings.HasSuffix(arg, ".csv") {
+				return arg
 			}
 		}
 		
-		// Case 2: TSV file after flags like -argv
-		if i > 0 && (args[i-1] == "-argv" || strings.HasSuffix(args[i-1], "-file")) && strings.HasSuffix(arg, ".tsv") {
-			return arg
+		// Case 2: Direct TSV/CSV file argument (bare argument, not following a flag)
+		if (strings.HasSuffix(arg, ".tsv") || strings.HasSuffix(arg, ".csv")) && !strings.HasPrefix(arg, "-") {
+			// Make sure it's not immediately after a flag that takes a value (exclude -argv case handled above)
+			if i == 0 || !strings.HasPrefix(args[i-1], "-") || args[i-1] == "-" || args[i-1] == "+" {
+				return arg // This is a positional argument
+			}
 		}
 	}
 	
@@ -672,6 +709,18 @@ func (cmd *GSCommand) analyzeCompletionContext(args []string, pos int) Completio
 	// Analyze backwards to find the flag that might need completion
 	flagPos, fieldMeta := cmd.findLastFlag(args, pos)
 	if fieldMeta == nil {
+		// No flag found, this might be a bare file argument
+		// Check if we should apply -argv completion behavior
+		if cmd.shouldUseBareFileCompletion(args, pos) {
+			// Find the Argv field metadata to use its suffix pattern
+			for i := range cmd.fields {
+				if cmd.fields[i].Name == "Argv" {
+					context.FieldMeta = &cmd.fields[i]
+					context.Type = CompletionFile
+					return context
+				}
+			}
+		}
 		context.Type = CompletionFile
 		return context
 	}
@@ -1087,6 +1136,25 @@ func matchesBracePattern(filename, pattern string) bool {
 	for _, option := range options {
 		testPattern := prefix + strings.TrimSpace(option) + suffix
 		if strings.HasSuffix(filename, testPattern) {
+			return true
+		}
+	}
+	
+	return false
+}
+
+// shouldUseBareFileCompletion determines if we should treat a bare argument as a file argument
+// like -argv, applying the same suffix filtering
+func (cmd *GSCommand) shouldUseBareFileCompletion(args []string, pos int) bool {
+	// If we're at position 0, this is likely a bare file argument
+	if pos == 0 {
+		return true
+	}
+	
+	// Check if the previous argument is not a flag or is a clause separator
+	if pos > 0 && pos-1 < len(args) {
+		prev := args[pos-1]
+		if prev == "+" || prev == "-" || (!strings.HasPrefix(prev, "-") && !strings.HasPrefix(prev, "+")) {
 			return true
 		}
 	}

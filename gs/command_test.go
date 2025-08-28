@@ -2,7 +2,6 @@ package gs
 
 import (
 	"context"
-	"fmt"
 	"reflect"
 	"strings"
 	"testing"
@@ -40,10 +39,7 @@ func (tc *TestCompletionConfig) Execute(ctx context.Context, clauses []ClauseSet
 }
 
 func (tc *TestCompletionConfig) Validate() error {
-	validTypes := map[string]bool{"bar": true, "line": true, "area": true}
-	if !validTypes[tc.Type] {
-		return fmt.Errorf("invalid type: %s", tc.Type)
-	}
+	// Enum validation now handled during parsing
 	return nil
 }
 
@@ -364,7 +360,7 @@ func TestFileCompletionWithSuffixFiltering(t *testing.T) {
 }
 
 func TestValidationIntegration(t *testing.T) {
-	// Test that enum validation works with the command execution
+	// Test that enum validation works during parsing (not in Validate())
 	config := &TestCompletionConfig{}
 	cmd, err := NewCommand(config)
 	if err != nil {
@@ -383,42 +379,32 @@ func TestValidationIntegration(t *testing.T) {
 			expectError: false,
 		},
 		{
-			name:        "invalid enum value",
+			name:        "invalid enum value - should fail during parsing",
 			args:        []string{"-type", "invalid"},
 			expectError: true,
-			errorText:   "invalid type: invalid",
+			errorText:   "invalid value 'invalid', must be one of: bar, line, area",
+		},
+		{
+			name:        "another invalid enum value",
+			args:        []string{"-type", "pie"},
+			expectError: true,
+			errorText:   "invalid value 'pie', must be one of: bar, line, area",
 		},
 	}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			clauses, err := cmd.Parse(test.args)
-			if err != nil {
-				t.Fatalf("Parse failed: %v", err)
-			}
-
-			// Apply clauses to config (simulate command execution)
-			for _, clause := range clauses {
-				for fieldName, value := range clause.Fields {
-					switch fieldName {
-					case "Type":
-						if strVal, ok := value.(string); ok {
-							config.Type = strVal
-						}
-					}
-				}
-			}
-
-			err = config.Validate()
+			_, err := cmd.Parse(test.args)
+			
 			if test.expectError {
 				if err == nil {
-					t.Errorf("Expected validation error but got none")
+					t.Errorf("Expected parsing error but got none")
 				} else if test.errorText != "" && !strings.Contains(err.Error(), test.errorText) {
 					t.Errorf("Expected error containing '%s', got '%s'", test.errorText, err.Error())
 				}
 			} else {
 				if err != nil {
-					t.Errorf("Unexpected validation error: %v", err)
+					t.Errorf("Unexpected parsing error: %v", err)
 				}
 			}
 		})
