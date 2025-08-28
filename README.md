@@ -47,13 +47,9 @@ func (cfg *ChartConfig) Execute(ctx context.Context, clauses []gs.ClauseSet) err
 }
 
 func (cfg *ChartConfig) Validate() error {
-    validTypes := []string{"bar", "line", "area"}
-    for _, valid := range validTypes {
-        if cfg.Type == valid {
-            return nil
-        }
-    }
-    return fmt.Errorf("invalid chart type: %s", cfg.Type)
+    // Enum validation now handled during parsing
+    // Add any other validation logic here if needed
+    return nil
 }
 ```
 
@@ -107,7 +103,47 @@ The `gs:` struct tag defines how each field behaves in the CLI:
 - `required=true` - Mark field as required
 - `args=field:content` - Multi-argument switches (e.g., `-match field value`)
 - `suffix=.tsv` - File completion filtering (supports glob patterns)
-- `enum=bar:line:area` - Enumerated values for string field completion
+- `enum=bar:line:area` - Enumerated values for string field completion and validation
+
+## Key Improvements
+
+### Unix-Style File Arguments
+
+GoGSTools now supports standard Unix command-line conventions with **bare file arguments**:
+
+```bash
+# Modern Unix-style syntax (preferred)
+chart data.tsv -x time -y cpu_usage
+
+# Traditional explicit syntax (still supported)  
+chart -argv data.tsv -x time -y cpu_usage
+```
+
+**Benefits:**
+- **Automatic detection**: `.tsv` and `.csv` files are automatically recognized as input files
+- **Smart completion**: Bare file arguments get the same intelligent completion as `-argv`, including suffix filtering (`.[tc]sv`)
+- **Backwards compatible**: Existing `-argv` syntax continues to work
+- **Position flexible**: File can appear anywhere: `chart -x time data.tsv -y cpu`
+
+### Parsing-Time Validation
+
+Enum validation now happens **during command parsing** instead of after the fact, providing immediate feedback:
+
+```bash
+# Invalid enum value fails immediately with clear message
+$ chart data.tsv -type pie
+Error: parsing value for -type: invalid value 'pie', must be one of: bar, line, area
+
+# Valid enum values work as expected  
+$ chart data.tsv -type line
+Chart Command Executed! Type: line
+```
+
+**Benefits:**
+- **Immediate feedback**: Users see validation errors right away
+- **Better error messages**: Clear indication of valid options
+- **Single source of truth**: Enum constraints defined once in struct tags
+- **Consistent with completion**: Same enum values power both validation and tab completion
 
 ## Clause-Based Logic
 
@@ -115,49 +151,53 @@ GoGSTools supports the same powerful clause system as the original TSVTools:
 
 ```bash
 # Multiple conditions within a clause are ANDed together
-chart -y cpu_usage -y memory_usage data.tsv
+chart data.tsv -y cpu_usage -y memory_usage
 
 # Different clauses are ORed together  
-chart -y cpu_usage + -y disk_io -right data.tsv
-#     ^^^^^^^^^^^^^   ^^^^^^^^^^^^^^^ 
-#     Clause 1        Clause 2
+chart data.tsv -y cpu_usage + -y disk_io -right
+#              ^^^^^^^^^^^^^   ^^^^^^^^^^^^^^^ 
+#              Clause 1        Clause 2
 
 # This creates: (cpu_usage) OR (disk_io on right axis)
 ```
 
 ### Practical Examples
 
-**Basic chart with two Y-axis fields:**
+**Basic chart with two Y-axis fields (Unix-style syntax):**
 ```bash
-chart -x time -y cpu_usage -y memory_usage data.tsv
+# New preferred syntax - bare file arguments
+chart data.tsv -x time -y cpu_usage -y memory_usage
+
+# Traditional syntax still supported
+chart -argv data.tsv -x time -y cpu_usage -y memory_usage
 ```
 
 **Dual-axis chart with clause-based grouping:**
 ```bash
-chart -x time -y cpu_usage -y memory_usage + -y disk_io -right data.tsv
+chart data.tsv -x time -y cpu_usage -y memory_usage + -y disk_io -right
 ```
 
 **Different chart types:**
 ```bash
-chart -type line -title "Performance Over Time" -x time -y cpu_usage data.tsv
+chart data.tsv -type line -title "Performance Over Time" -x time -y cpu_usage
 ```
 
 **Multi-argument switches with content filtering:**
 ```bash
 # Filter data where cpu_usage > 30 and memory_usage < 50
-chart -match cpu_usage 30 -match memory_usage 50 data.tsv
+chart data.tsv -match cpu_usage 30 -match memory_usage 50
 
 # Combine with clauses - different filters ORed together
-chart -match name Alice + -match department Engineering data.tsv
+chart data.tsv -match name Alice + -match department Engineering
 ```
 
 **Universal switch negation:**
 ```bash
 # Include all Y fields except cpu_usage
-chart -y memory_usage -y disk_io +y cpu_usage data.tsv
+chart data.tsv -y memory_usage -y disk_io +y cpu_usage
 
 # Mixed positive and negative switches
-chart -match active true +match archived true data.tsv
+chart data.tsv -match active true +match archived true
 ```
 
 ## Advanced Completion Features
@@ -182,16 +222,16 @@ type ChartConfig struct {
 }
 
 # Completion shows actual field names, then actual values from that field
-chart -match cpu_usage <TAB>    # Shows: 25.5 35.0 45.0 30.0 40.0
-chart -match name <TAB>         # Shows: Alice Bob Charlie David
+chart data.tsv -match cpu_usage <TAB>    # Shows: 25.5 35.0 45.0 30.0 40.0
+chart data.tsv -match name <TAB>         # Shows: Alice Bob Charlie David
 ```
 
 ### Universal Switch Negation
 Any switch can be prefixed with `+` for negation or `-` for positive:
 
 ```bash
-chart -y cpu_usage      # Include cpu_usage field
-chart +y cpu_usage      # Exclude cpu_usage field (negated)
+chart data.tsv -y cpu_usage      # Include cpu_usage field
+chart data.tsv +y cpu_usage      # Exclude cpu_usage field (negated)
 ```
 
 ### File Completion with Glob Pattern Filtering
@@ -219,16 +259,16 @@ type ChartConfig struct {
 }
 
 # Tab completion shows available enum values
-chart -type <TAB>      # Shows: bar line area
-chart -type l<TAB>     # Completes to: line
+chart data.tsv -type <TAB>      # Shows: bar line area
+chart data.tsv -type l<TAB>     # Completes to: line
 ```
 
 ### Directory Navigation
 File completion supports directory traversal:
 
 ```bash
-chart -argv /tmp/<TAB>      # Shows files in /tmp matching suffix + subdirectories
-chart -argv data/<TAB>      # Shows files in data/ directory
+chart /tmp/<TAB>            # Shows files in /tmp matching suffix + subdirectories
+chart data/<TAB>            # Shows files in data/ directory
 ```
 
 ## Bash Completion Setup
@@ -271,8 +311,8 @@ Test that completion is working:
 complete -p chart
 
 # Test completion manually  
-chart -complete 1 -type                           # Should show: bar line area
-chart -complete 1 -y testdata/sample.tsv         # Should show TSV field names
+chart -complete 2 data.tsv -type                 # Should show: bar line area
+chart -complete 1 data.tsv -y                    # Should show TSV field names
 ```
 
 ### Troubleshooting
