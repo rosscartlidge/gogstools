@@ -20,6 +20,7 @@ type GSCommand struct {
 	fieldCache  map[string][]string // TSV field name cache
 	contentCache map[string]map[string][]string // TSV content cache: filename -> field -> values
 	scanDepth   int // Number of lines to scan for content completion
+	commandName string // Name of the command binary for completion scripts
 }
 
 // NewCommand creates a new GSCommand from a configuration struct
@@ -29,12 +30,19 @@ func NewCommand(config interface{}) (*GSCommand, error) {
 		return nil, fmt.Errorf("reflecting fields: %w", err)
 	}
 	
+	// Extract command name from os.Args[0]
+	commandName := "command" // fallback
+	if len(os.Args) > 0 {
+		commandName = filepath.Base(os.Args[0])
+	}
+	
 	cmd := &GSCommand{
 		config:       config,
 		fields:       fields,
 		fieldCache:   make(map[string][]string),
 		contentCache: make(map[string]map[string][]string),
 		scanDepth:    100, // Default scan depth like TSVSelect
+		commandName:  commandName,
 	}
 	
 	return cmd, nil
@@ -200,7 +208,8 @@ func (cmd *GSCommand) parseFlagWithNegation(args []string, clause *ClauseSet, gl
 	switch fieldMeta.Type {
 	case FieldTypeFlag:
 		// Boolean flag, no value needed
-		target[fieldMeta.Name] = true
+		// If negated, store false; otherwise store true
+		target[fieldMeta.Name] = !negated
 		return 1, nil
 		
 	case FieldTypeMulti:
@@ -495,9 +504,8 @@ func (cmd *GSCommand) GetFields() []FieldMeta {
 
 // generateBashCompletion generates a bash completion script
 func (cmd *GSCommand) generateBashCompletion() string {
-	// Extract command name from the program name
-	// This would typically be set from os.Args[0] in a real implementation
-	commandName := "chart" // Default for our example
+	// Use the stored command name
+	commandName := cmd.commandName
 	
 	return fmt.Sprintf(`# Bash completion for %s
 _%s_completion() {
