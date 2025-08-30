@@ -415,9 +415,13 @@ open process_chart.html  # macOS
 ```
 
 This creates a responsive HTML chart with:
+
 - **Interactive tooltips** showing exact process counts
+
 - **Deterministic colors** - same user always gets same color  
+
 - **Professional styling** with Chart.js
+
 - **Responsive design** that adapts to screen size
 
 ### Advanced System Analysis
