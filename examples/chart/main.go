@@ -1,12 +1,12 @@
 package main
 
 import (
-	"bufio"
 	"context"
 	"crypto/md5"
 	"encoding/csv"
 	"fmt"
 	"html/template"
+	"io"
 	"log"
 	"os"
 	"regexp"
@@ -76,7 +76,7 @@ type TSVData struct {
 	Rows    [][]string
 }
 
-// getInputFile determines the input file from args or Argv field
+// getInputFile determines the input file from args or Argv field, returns "-" for stdin
 func (cfg *ChartConfig) getInputFile(clauses []gs.ClauseSet) string {
 	// First check if Argv is set (either from -argv flag or bare argument)
 	if cfg.Argv != "" {
@@ -97,48 +97,105 @@ func (cfg *ChartConfig) getInputFile(clauses []gs.ClauseSet) string {
 		}
 	}
 	
-	return ""
+	// If no file specified, use stdin (for pipe support)
+	return "-"
 }
 
-// parseTSV reads and parses a TSV/CSV file
+// parseTSV reads and parses a TSV/CSV file or stdin
 func parseTSV(filename string) (*TSVData, error) {
-	file, err := os.Open(filename)
-	if err != nil {
-		return nil, fmt.Errorf("opening file %s: %w", filename, err)
+	var reader io.Reader
+	var closeFn func() error
+	
+	// Handle stdin vs file input
+	if filename == "" || filename == "-" {
+		reader = os.Stdin
+		closeFn = func() error { return nil } // Don't close stdin
+	} else {
+		file, err := os.Open(filename)
+		if err != nil {
+			return nil, fmt.Errorf("opening file %s: %w", filename, err)
+		}
+		reader = file
+		closeFn = file.Close
 	}
-	defer file.Close()
-
-	// Detect separator (tab vs comma)
-	reader := bufio.NewReader(file)
-	firstLine, _, err := reader.ReadLine()
+	defer closeFn()
+	
+	// Create CSV reader with initial tab separator guess
+	csvReader := csv.NewReader(reader)
+	csvReader.Comma = '\t'
+	csvReader.FieldsPerRecord = -1 // Allow variable fields
+	
+	// Read first record to detect separator and get headers
+	firstRecord, err := csvReader.Read()
 	if err != nil {
+		if err == io.EOF {
+			return nil, fmt.Errorf("no data in input")
+		}
 		return nil, fmt.Errorf("reading first line: %w", err)
 	}
 	
-	separator := '\t'
-	if strings.Count(string(firstLine), ",") > strings.Count(string(firstLine), "\t") {
-		separator = ','
+	// If we only got one field with tab separator, try comma separator
+	if len(firstRecord) == 1 && strings.Contains(firstRecord[0], ",") {
+		// Reset reader with comma separator
+		var newReader io.Reader
+		if filename == "" || filename == "-" {
+			// For stdin, we can't reset, so parse the first line manually
+			firstLineData := firstRecord[0]
+			headers := strings.Split(firstLineData, ",")
+			for i, header := range headers {
+				headers[i] = strings.TrimSpace(header)
+			}
+			
+			// Read remaining lines with comma separator
+			csvReader.Comma = ','
+			remainingRecords, err := csvReader.ReadAll()
+			if err != nil && err != io.EOF {
+				return nil, fmt.Errorf("reading CSV records: %w", err)
+			}
+			
+			return &TSVData{
+				Headers: headers,
+				Rows:    remainingRecords,
+			}, nil
+		} else {
+			// For files, we can reopen and re-read with comma separator
+			file, err := os.Open(filename)
+			if err != nil {
+				return nil, fmt.Errorf("reopening file %s: %w", filename, err)
+			}
+			defer file.Close()
+			newReader = file
+		}
+		
+		csvReader = csv.NewReader(newReader)
+		csvReader.Comma = ','
+		csvReader.FieldsPerRecord = -1
+		
+		// Read all records with comma separator
+		allRecords, err := csvReader.ReadAll()
+		if err != nil {
+			return nil, fmt.Errorf("reading CSV records: %w", err)
+		}
+		
+		if len(allRecords) == 0 {
+			return nil, fmt.Errorf("no data in input")
+		}
+		
+		return &TSVData{
+			Headers: allRecords[0],
+			Rows:    allRecords[1:],
+		}, nil
 	}
 	
-	// Reset file position
-	file.Seek(0, 0)
-	
-	csvReader := csv.NewReader(file)
-	csvReader.Comma = separator
-	csvReader.FieldsPerRecord = -1 // Allow variable fields
-	
-	records, err := csvReader.ReadAll()
-	if err != nil {
-		return nil, fmt.Errorf("reading CSV records: %w", err)
-	}
-	
-	if len(records) == 0 {
-		return nil, fmt.Errorf("no data in file")
+	// Tab separator worked, read remaining records
+	remainingRecords, err := csvReader.ReadAll()
+	if err != nil && err != io.EOF {
+		return nil, fmt.Errorf("reading remaining records: %w", err)
 	}
 	
 	return &TSVData{
-		Headers: records[0],
-		Rows:    records[1:],
+		Headers: firstRecord,
+		Rows:    remainingRecords,
 	}, nil
 }
 
