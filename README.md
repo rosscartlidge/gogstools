@@ -121,9 +121,13 @@ chart -argv data.tsv -x time -y cpu_usage
 ```
 
 **Benefits:**
+
 - **Automatic detection**: `.tsv` and `.csv` files are automatically recognized as input files
+
 - **Smart completion**: Bare file arguments get the same intelligent completion as `-argv`, including suffix filtering (`.[tc]sv`)
+
 - **Backwards compatible**: Existing `-argv` syntax continues to work
+
 - **Position flexible**: File can appear anywhere: `chart -x time data.tsv -y cpu`
 
 ### Parsing-Time Validation
@@ -141,9 +145,13 @@ Chart Command Executed! Type: line
 ```
 
 **Benefits:**
+
 - **Immediate feedback**: Users see validation errors right away
+
 - **Better error messages**: Clear indication of valid options
+
 - **Single source of truth**: Enum constraints defined once in struct tags
+
 - **Consistent with completion**: Same enum values power both validation and tab completion
 
 ## Clause-Based Logic
@@ -442,13 +450,21 @@ tsv2chart cpu_load.tsv -type line -x time -y load_avg \
 ## Examples
 
 The `examples/tsv2chart` directory provides a complete working implementation that demonstrates:
+
 - **Complete TSV processing**: Automatic separator detection (tab vs comma)
+
 - **Clause-based stacking**: Multiple `-y` fields in same clause stack together  
+
 - **Dual-axis support**: `-right` flag for right Y-axis scaling
+
 - **Interactive Chart.js output**: Hover tooltips, responsive design
+
 - **Field-aware completion**: Tab completion from actual TSV field names
+
 - **Content completion**: Shows actual field values from data
+
 - **Regex filtering**: `-match field pattern` for data filtering
+
 - **Quiet mode**: Silent by default, verbose with `+quiet`
 
 ## Contributing
