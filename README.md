@@ -16,39 +16,42 @@ GoGSTools is a Go package that brings the sophisticated command-line interface c
 ### 1. Define Your Command Structure
 
 ```go
-type ChartConfig struct {
+type TSV2ChartConfig struct {
     X         string                      `gs:"field,global,last,help=Use field for X axis"`
     Y         []string                    `gs:"field,local,list,help=Use field for Y axis"`
     Match     []map[string]interface{}    `gs:"multi,local,list,args=field:content,help=Filter by field matching content"`
     Right     bool                        `gs:"flag,local,last,help=Use right-hand scale"`
     Title     string                      `gs:"string,global,last,help=Chart title,default=Chart"`
-    Type      string                      `gs:"string,global,last,help=Chart type: bar/line/area,default=bar"`
+    Type      string                      `gs:"string,global,last,help=Chart type: bar/line/area,default=bar,enum=bar:line:area"`
+    Width     float64                     `gs:"number,global,last,help=Chart width in pixels,default=800"`
+    Height    float64                     `gs:"number,global,last,help=Chart height in pixels,default=400"`
+    Quiet     bool                        `gs:"flag,global,last,help=Suppress progress messages,default=true"`
     Argv      string                      `gs:"file,global,last,help=Input TSV file,suffix=.[tc]sv"`
-    Config    string                      `gs:"file,global,last,help=Configuration file,suffix=.json"`
 }
 ```
 
 ### 2. Implement the Commander Interface
 
 ```go
-func (cfg *ChartConfig) Execute(ctx context.Context, clauses []gs.ClauseSet) error {
-    fmt.Printf("Creating %s chart: %s\n", cfg.Type, cfg.Title)
-    
-    for i, clause := range clauses {
-        fmt.Printf("Clause %d:\n", i+1)
-        if yFields, ok := clause.Fields["Y"]; ok {
-            fmt.Printf("  Y fields: %v\n", yFields)
-        }
-        if right, ok := clause.Fields["Right"]; ok && right.(bool) {
-            fmt.Printf("  Using right axis\n")
-        }
+func (cfg *TSV2ChartConfig) Execute(ctx context.Context, clauses []gs.ClauseSet) error {
+    // Get input file (supports both -argv flag and bare arguments)
+    inputFile := cfg.getInputFile(clauses)
+    if inputFile == "" {
+        return fmt.Errorf("no input file specified")
     }
-    return nil
+    
+    // Parse TSV data
+    data, err := parseTSV(inputFile)
+    if err != nil {
+        return fmt.Errorf("parsing TSV file: %w", err)
+    }
+    
+    // Process clauses and generate Chart.js HTML
+    return cfg.generateChart(data, clauses)
 }
 
-func (cfg *ChartConfig) Validate() error {
+func (cfg *TSV2ChartConfig) Validate() error {
     // Enum validation now handled during parsing
-    // Add any other validation logic here if needed
     return nil
 }
 ```
@@ -57,16 +60,14 @@ func (cfg *ChartConfig) Validate() error {
 
 ```go
 func main() {
-    config := &ChartConfig{}
+    config := &TSV2ChartConfig{}
     
     cmd, err := gs.NewCommand(config)
     if err != nil {
         log.Fatal(err)
     }
     
-    // Optional: Add TSV field completion
-    cmd.SetCompleter(completion.NewTSVCompleter())
-    
+    // TSV field completion is built into GSCommand
     if err := cmd.Execute(context.Background(), os.Args[1:]); err != nil {
         log.Fatal(err)
     }
@@ -151,12 +152,12 @@ GoGSTools supports the same powerful clause system as the original TSVTools:
 
 ```bash
 # Multiple conditions within a clause are ANDed together
-chart data.tsv -y cpu_usage -y memory_usage
+tsv2chart data.tsv -y cpu_usage -y memory_usage
 
 # Different clauses are ORed together  
-chart data.tsv -y cpu_usage + -y disk_io -right
-#              ^^^^^^^^^^^^^   ^^^^^^^^^^^^^^^ 
-#              Clause 1        Clause 2
+tsv2chart data.tsv -y cpu_usage + -y disk_io -right
+#                  ^^^^^^^^^^^^^   ^^^^^^^^^^^^^^^ 
+#                  Clause 1        Clause 2
 
 # This creates: (cpu_usage) OR (disk_io on right axis)
 ```
@@ -166,38 +167,38 @@ chart data.tsv -y cpu_usage + -y disk_io -right
 **Basic chart with two Y-axis fields (Unix-style syntax):**
 ```bash
 # New preferred syntax - bare file arguments
-chart data.tsv -x time -y cpu_usage -y memory_usage
+tsv2chart data.tsv -x time -y cpu_usage -y memory_usage
 
 # Traditional syntax still supported
-chart -argv data.tsv -x time -y cpu_usage -y memory_usage
+tsv2chart -argv data.tsv -x time -y cpu_usage -y memory_usage
 ```
 
 **Dual-axis chart with clause-based grouping:**
 ```bash
-chart data.tsv -x time -y cpu_usage -y memory_usage + -y disk_io -right
+tsv2chart data.tsv -x time -y cpu_usage -y memory_usage + -y disk_io -right
 ```
 
 **Different chart types:**
 ```bash
-chart data.tsv -type line -title "Performance Over Time" -x time -y cpu_usage
+tsv2chart data.tsv -type line -title "Performance Over Time" -x time -y cpu_usage
 ```
 
 **Multi-argument switches with content filtering:**
 ```bash
 # Filter data where cpu_usage > 30 and memory_usage < 50
-chart data.tsv -match cpu_usage 30 -match memory_usage 50
+tsv2chart data.tsv -match cpu_usage 30 -match memory_usage 50
 
 # Combine with clauses - different filters ORed together
-chart data.tsv -match name Alice + -match department Engineering
+tsv2chart data.tsv -match name Alice + -match department Engineering
 ```
 
 **Universal switch negation:**
 ```bash
 # Include all Y fields except cpu_usage
-chart data.tsv -y memory_usage -y disk_io +y cpu_usage
+tsv2chart data.tsv -y memory_usage -y disk_io +y cpu_usage
 
 # Mixed positive and negative switches
-chart data.tsv -match active true +match archived true
+tsv2chart data.tsv -match active true +match archived true
 ```
 
 ## Advanced Completion Features
@@ -280,11 +281,11 @@ GoGSTools provides sophisticated bash completion that must be installed to work 
 ```bash
 # 1. Build your command
 cd examples/chart
-go build
+go build -o tsv2chart
 
 # 2. Install completion (user-specific)
 mkdir -p ~/.local/share/bash-completion/completions
-./chart -bash-completion > ~/.local/share/bash-completion/completions/chart
+./tsv2chart -bash-completion > ~/.local/share/bash-completion/completions/tsv2chart
 
 # 3. Restart shell or source completion
 exec bash
@@ -294,13 +295,13 @@ exec bash
 
 **System-wide installation (requires sudo):**
 ```bash
-sudo ./chart -bash-completion > /etc/bash_completion.d/chart
+sudo ./tsv2chart -bash-completion > /etc/bash_completion.d/tsv2chart
 exec bash
 ```
 
 **Session-only installation:**
 ```bash
-eval "$(./chart -bash-completion)"
+eval "$(./tsv2chart -bash-completion)"
 ```
 
 ### Verification
@@ -308,11 +309,11 @@ eval "$(./chart -bash-completion)"
 Test that completion is working:
 ```bash
 # Check completion is registered
-complete -p chart
+complete -p tsv2chart
 
 # Test completion manually  
-chart -complete 2 data.tsv -type                 # Should show: bar line area
-chart -complete 1 data.tsv -y                    # Should show TSV field names
+tsv2chart -complete 2 data.tsv -type             # Should show: bar line area
+tsv2chart -complete 1 data.tsv -y                # Should show TSV field names
 ```
 
 ### Troubleshooting
@@ -326,9 +327,9 @@ chart -complete 1 data.tsv -y                    # Should show TSV field names
    brew install bash-completion
    ```
 
-2. **Verify chart binary path:**
+2. **Verify tsv2chart binary path:**
    ```bash
-   which chart    # Should show the binary location
+   which tsv2chart    # Should show the binary location
    ```
 
 3. **Re-source completion:**
@@ -343,13 +344,13 @@ Every command automatically supports help and documentation:
 
 ```bash
 # Show help
-chart -help
+tsv2chart -help
 
 # Show man page  
-chart -man
+tsv2chart -man
 
-# Show usage
-chart -usage
+# Generate bash completion
+tsv2chart -bash-completion
 ```
 
 ## Comparison with Original TSVTools
@@ -379,7 +380,9 @@ github.com/rosscartlidge/gogstools/
 │   ├── command.go     # Main command execution with integrated completion
 │   └── command_test.go # Comprehensive test suite
 └── examples/           # Example implementations
-    └── chart/         # Working chart command demonstrator
+    └── chart/         # Complete TSV2Chart implementation
+        ├── main.go    # Full-featured TSV-to-Chart.js processor
+        └── tsv2chart  # Production-ready binary
 ```
 
 ## Installation
@@ -388,14 +391,61 @@ github.com/rosscartlidge/gogstools/
 go get github.com/rosscartlidge/gogstools
 ```
 
+## Real-World Example: System Process Visualization
+
+Here's a practical example that creates an interactive chart showing process counts by user using system data:
+
+```bash
+# Collect process data by user from the system
+echo -e "uid\tuser\tprocess_count" > process_count.tsv
+ps -eo uid,user --no-headers | awk '{
+    count[$1]++; users[$1]=$2
+} END {
+    for(uid in count) print uid"\t"users[uid]"\t"count[uid]
+}' | sort -k3 -nr >> process_count.tsv
+
+# Generate an interactive bar chart
+tsv2chart process_count.tsv -type bar -x user -y process_count \
+    -title "System Process Count by User" \
+    -width 1000 -height 600 > process_chart.html
+
+# Open the chart in your browser
+open process_chart.html  # macOS
+# or: xdg-open process_chart.html  # Linux
+```
+
+This creates a responsive HTML chart with:
+- **Interactive tooltips** showing exact process counts
+- **Deterministic colors** - same user always gets same color  
+- **Professional styling** with Chart.js
+- **Responsive design** that adapts to screen size
+
+### Advanced System Analysis
+
+```bash
+# Create time-series data of CPU usage (requires multiple samples)
+for i in {1..10}; do
+    echo "$i\t$(cat /proc/loadavg | cut -d' ' -f1)" >> cpu_load.tsv
+    sleep 2
+done
+
+# Add header and create line chart
+sed -i '1i time\tload_avg' cpu_load.tsv
+tsv2chart cpu_load.tsv -type line -x time -y load_avg \
+    -title "System Load Average Over Time" > load_chart.html
+```
+
 ## Examples
 
-See the `examples/chart` directory for a complete working example that demonstrates:
-- Multi-field Y-axis support with clause-based stacking
-- Global vs local field scopes  
-- Automatic field completion from TSV files
-- Type conversion and validation
-- Help generation
+The `examples/tsv2chart` directory provides a complete working implementation that demonstrates:
+- **Complete TSV processing**: Automatic separator detection (tab vs comma)
+- **Clause-based stacking**: Multiple `-y` fields in same clause stack together  
+- **Dual-axis support**: `-right` flag for right Y-axis scaling
+- **Interactive Chart.js output**: Hover tooltips, responsive design
+- **Field-aware completion**: Tab completion from actual TSV field names
+- **Content completion**: Shows actual field values from data
+- **Regex filtering**: `-match field pattern` for data filtering
+- **Quiet mode**: Silent by default, verbose with `+quiet`
 
 ## Contributing
 
